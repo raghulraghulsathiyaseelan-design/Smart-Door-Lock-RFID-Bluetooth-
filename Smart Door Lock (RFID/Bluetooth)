@@ -1,0 +1,79 @@
+#include <SPI.h>
+#include <MFRC522.h>
+#include <Servo.h>
+
+#define SS_PIN 10
+#define RST_PIN 9
+MFRC522 mfrc522(SS_PIN, RST_PIN);  // RFID
+
+Servo lockServo;
+#define servoPin 3
+#define buzzer 4
+
+String readData = "";
+String authBT = "1234";  // Authorized Bluetooth password
+
+// Example authorized RFID UID (4 bytes)
+byte authUID[4] = {0xA1, 0xB2, 0xC3, 0xD4};
+
+void setup() {
+  Serial.begin(9600);  // For Bluetooth
+  SPI.begin();
+  mfrc522.PCD_Init();
+  
+  lockServo.attach(servoPin);
+  lockServo.write(0); // Lock position
+  
+  pinMode(buzzer, OUTPUT);
+  Serial.println("Smart Door Lock Ready");
+}
+
+void loop() {
+  // --- Bluetooth Unlock ---
+  if (Serial.available()) {
+    readData = Serial.readStringUntil('\n');
+    readData.trim();
+    if (readData == authBT) {
+      unlockDoor();
+    } else {
+      wrongAccess();
+    }
+  }
+
+  // --- RFID Unlock ---
+  if ( ! mfrc522.PICC_IsNewCardPresent()) return;
+  if ( ! mfrc522.PICC_ReadCardSerial()) return;
+
+  if (mfrc522.uid.size == 4) {  // Ensure UID length is correct
+    bool match = true;
+    for (byte i = 0; i < 4; i++) {
+      if (mfrc522.uid.uidByte[i] != authUID[i]) {
+        match = false;
+        break;
+      }
+    }
+
+    if (match) {
+      unlockDoor();
+    } else {
+      wrongAccess();
+    }
+  }
+
+  mfrc522.PICC_HaltA();
+  mfrc522.PCD_StopCrypto1();
+}
+
+void unlockDoor() {
+  Serial.println("Access Granted - Door Unlocked");
+  lockServo.write(90); // Unlock position
+  delay(3000);
+  lockServo.write(0);  // Lock again
+}
+
+void wrongAccess() {
+  Serial.println("Access Denied!");
+  digitalWrite(buzzer, HIGH);
+  delay(1000);
+  digitalWrite(buzzer, LOW);
+}
